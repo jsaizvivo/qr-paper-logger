@@ -9,8 +9,16 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png"/>
 <meta name="theme-color" content="#001f5b"/>
 </head>
-
 <body>
+
+<!-- Operator gate -->
+<div id="opGate" style="position:fixed;inset:0;background:#001f5b;color:#fff;display:flex;flex-direction:column;justify-content:center;align-items:center;z-index:100;padding:20px">
+  <h2>QR Paper Logger</h2>
+  <p>Enter operator name to start the session</p>
+  <input id="opName" placeholder="e.g. J. Saiz" style="max-width:300px;color:#000"/>
+  <button id="opStart" style="margin-top:12px;max-width:300px">Start session</button>
+  <p id="opHint" style="font-size:12px;opacity:.7;margin-top:16px"></p>
+</div>
 
 <nav id="tabs">
   <button data-tab="capture" class="active">Capture</button>
@@ -18,16 +26,14 @@
   <button data-tab="progress">Progress</button>
 </nav>
 
-<!-- ============ CAPTURE TAB ============ -->
 <section id="tab-capture" class="tab active">
-  <h2>Capture</h2>
+  <h2>Capture <small id="opLabel" style="font-weight:400;font-size:13px;opacity:.7"></small></h2>
 
   <div class="mode-row">
     <label><input type="radio" name="mode" value="live" checked/> Live camera (auto QR scan)</label>
     <label><input type="radio" name="mode" value="native"/> Native camera app</label>
   </div>
 
-  <!-- Live mode -->
   <div id="liveBox">
     <video id="video" autoplay playsinline muted></video>
     <canvas id="canvas"></canvas>
@@ -38,9 +44,8 @@
     </div>
   </div>
 
-  <!-- Native mode -->
   <div id="nativeBox" hidden>
-    <p>Opens your phone's camera app (so Android auto-scan features such as Google Lens / Samsung Scene Optimizer apply).</p>
+    <p>Opens your phone's camera. Make sure your default is a <b>camera app</b> (not a scanner that returns PDFs).</p>
     <input id="nativeInput" type="file" accept="image/*" capture="environment"/>
     <img id="nativePreview" alt=""/>
   </div>
@@ -53,19 +58,30 @@
     <select id="phone"><option>iPhone</option><option>Android</option><option>Other</option></select>
 
     <label>Scan app</label>
-    <select id="scanApp"><option>Native camera</option><option>Google Lens</option><option>Adobe Scan</option><option>CamScanner</option><option>Other</option></select>
+    <select id="scanApp"><option>Native camera</option><option>Scanner app</option></select>
 
-    <label>Crease</label>
-    <select id="crease"><option>None</option><option>Light</option><option>Heavy</option></select>
+    <label>Rotation severity</label>
+    <select id="rotation_severity"><option>none</option><option>mild</option><option>strong</option></select>
 
-    <label>Ink</label>
-    <select id="ink"><option>Clean</option><option>Smudged</option><option>Faded</option></select>
+    <label>Crease severity</label>
+    <select id="crease_severity"><option>none</option><option>mild</option><option>strong</option></select>
 
-    <label>Rotation (deg)</label>
-    <input id="rotation" type="number" value="0"/>
+    <label>Blur severity</label>
+    <select id="blur_severity"><option>none</option><option>mild</option><option>strong</option></select>
+
+    <fieldset style="border:1px solid #ddd;border-radius:6px;padding:8px;margin-top:10px">
+      <legend>Augmentation conditions</legend>
+      <label class="chk"><input type="checkbox" id="has_rotation"/> has_rotation</label>
+      <label class="chk"><input type="checkbox" id="has_shear"/> has_shear</label>
+      <label class="chk"><input type="checkbox" id="has_crease"/> has_crease</label>
+      <label class="chk"><input type="checkbox" id="has_ink_annotation"/> has_ink_annotation</label>
+      <label class="chk"><input type="checkbox" id="has_shadow"/> has_shadow</label>
+      <label class="chk"><input type="checkbox" id="has_partial_occlusion"/> has_partial_occlusion</label>
+      <label class="chk"><input type="checkbox" id="has_motion_blur"/> has_motion_blur</label>
+    </fieldset>
 
     <label>Image format</label>
-    <select id="format"><option>jpg</option><option>png</option></select>
+    <select id="format"><option selected>jpg</option><option>png</option></select>
 
     <label>Notes</label>
     <input id="notes" type="text"/>
@@ -76,14 +92,12 @@
   <p id="status"></p>
 </section>
 
-<!-- ============ GALLERY TAB ============ -->
 <section id="tab-gallery" class="tab">
   <h2>Gallery</h2>
   <input id="filter" placeholder="Filter by QR ID..."/>
   <div id="grid"></div>
 </section>
 
-<!-- ============ PROGRESS TAB ============ -->
 <section id="tab-progress" class="tab">
   <h2>Progress</h2>
   <div id="stats"></div>
@@ -98,6 +112,7 @@
     <button id="exportBtn">Export .xlsx + images (ZIP)</button>
     <button id="wipeBtn" class="danger">Wipe local data</button>
   </div>
+  <p style="font-size:12px;opacity:.7">Operator: <span id="opLabel2"></span> &middot; <a href="#" id="changeOp">change</a></p>
 </section>
 
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>

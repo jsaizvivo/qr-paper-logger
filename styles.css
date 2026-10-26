@@ -29,3 +29,4 @@ button:disabled{opacity:.5}
 .badge.earned{background:#ffd34d;color:#333;font-weight:600}
 table{width:100%;border-collapse:collapse;margin-top:6px}
 th,td{border-bottom:1px solid #eee;padding:6px;text-align:left;font-size:14px}
+.chk{display:block;font-weight:400;margin:4px 0}
