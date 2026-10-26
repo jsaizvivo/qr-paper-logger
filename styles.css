@@ -1,0 +1,31 @@
+*{box-sizing:border-box}
+body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;padding:0 12px 80px;max-width:720px;margin:auto;color:#1a1a1a}
+h2{margin:12px 0}
+nav#tabs{position:sticky;top:0;background:#fff;display:flex;gap:4px;padding:8px 0;border-bottom:1px solid #ddd;z-index:5}
+nav#tabs button{flex:1;padding:10px;background:#eef;border:0;border-radius:6px;font-weight:600}
+nav#tabs button.active{background:#001f5b;color:#fff}
+.tab{display:none}.tab.active{display:block}
+video,canvas,#nativePreview{width:100%;border-radius:8px;background:#000;max-height:55vh;object-fit:contain}
+canvas{display:none}
+label{display:block;margin:10px 0 4px;font-weight:600}
+select,input[type=text],input[type=number],input[type=file]{width:100%;padding:10px;font-size:16px;border-radius:6px;border:1px solid #ccc;background:#fff}
+button{padding:10px 14px;font-size:15px;border-radius:6px;border:0;background:#001f5b;color:#fff;font-weight:600}
+button.danger{background:#a00}
+button:disabled{opacity:.5}
+.row{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}.row>*{flex:1;min-width:120px}
+.mode-row{display:flex;gap:12px;margin:8px 0;flex-wrap:wrap}
+.mode-row label{font-weight:400}
+#qrText{font-family:monospace;background:#eef;padding:4px 8px;border-radius:4px}
+#grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-top:10px}
+.card{border:1px solid #ddd;border-radius:6px;overflow:hidden;background:#fafafa}
+.card img{width:100%;height:120px;object-fit:cover;display:block}
+.card .meta{font-size:11px;padding:4px}
+.card button{width:100%;background:#a00;border-radius:0;padding:4px;font-size:12px}
+#stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin:10px 0}
+.stat{background:#eef;padding:10px;border-radius:6px;text-align:center}
+.stat b{display:block;font-size:22px;color:#001f5b}
+#badges{display:flex;flex-wrap:wrap;gap:6px}
+.badge{padding:6px 10px;border-radius:999px;background:#eee;font-size:13px}
+.badge.earned{background:#ffd34d;color:#333;font-weight:600}
+table{width:100%;border-collapse:collapse;margin-top:6px}
+th,td{border-bottom:1px solid #eee;padding:6px;text-align:left;font-size:14px}

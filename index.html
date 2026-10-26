@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<title>QR Paper Logger</title>
+<link rel="manifest" href="manifest.json"/>
+<link rel="stylesheet" href="styles.css"/>
+<link rel="apple-touch-icon" href="apple-touch-icon.png"/>
+<meta name="theme-color" content="#001f5b"/>
+</head>
+
+<body>
+
+<nav id="tabs">
+  <button data-tab="capture" class="active">Capture</button>
+  <button data-tab="gallery">Gallery</button>
+  <button data-tab="progress">Progress</button>
+</nav>
+
+<!-- ============ CAPTURE TAB ============ -->
+<section id="tab-capture" class="tab active">
+  <h2>Capture</h2>
+
+  <div class="mode-row">
+    <label><input type="radio" name="mode" value="live" checked/> Live camera (auto QR scan)</label>
+    <label><input type="radio" name="mode" value="native"/> Native camera app</label>
+  </div>
+
+  <!-- Live mode -->
+  <div id="liveBox">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="canvas"></canvas>
+    <div class="row">
+      <button id="startBtn">Start camera</button>
+      <button id="snapBtn" disabled>Capture frame</button>
+      <button id="torchBtn" disabled>Torch</button>
+    </div>
+  </div>
+
+  <!-- Native mode -->
+  <div id="nativeBox" hidden>
+    <p>Opens your phone's camera app (so Android auto-scan features such as Google Lens / Samsung Scene Optimizer apply).</p>
+    <input id="nativeInput" type="file" accept="image/*" capture="environment"/>
+    <img id="nativePreview" alt=""/>
+  </div>
+
+  <p>QR detected: <span id="qrText">(none)</span>
+     <button id="manualQrBtn" type="button">Enter manually</button></p>
+
+  <div id="formArea">
+    <label>Phone type</label>
+    <select id="phone"><option>iPhone</option><option>Android</option><option>Other</option></select>
+
+    <label>Scan app</label>
+    <select id="scanApp"><option>Native camera</option><option>Google Lens</option><option>Adobe Scan</option><option>CamScanner</option><option>Other</option></select>
+
+    <label>Crease</label>
+    <select id="crease"><option>None</option><option>Light</option><option>Heavy</option></select>
+
+    <label>Ink</label>
+    <select id="ink"><option>Clean</option><option>Smudged</option><option>Faded</option></select>
+
+    <label>Rotation (deg)</label>
+    <input id="rotation" type="number" value="0"/>
+
+    <label>Image format</label>
+    <select id="format"><option>jpg</option><option>png</option></select>
+
+    <label>Notes</label>
+    <input id="notes" type="text"/>
+
+    <button id="saveBtn" disabled>Save record</button>
+  </div>
+
+  <p id="status"></p>
+</section>
+
+<!-- ============ GALLERY TAB ============ -->
+<section id="tab-gallery" class="tab">
+  <h2>Gallery</h2>
+  <input id="filter" placeholder="Filter by QR ID..."/>
+  <div id="grid"></div>
+</section>
+
+<!-- ============ PROGRESS TAB ============ -->
+<section id="tab-progress" class="tab">
+  <h2>Progress</h2>
+  <div id="stats"></div>
+  <h3>Achievements</h3>
+  <div id="badges"></div>
+  <h3>Per-ID breakdown</h3>
+  <table id="idTable"><thead><tr><th>QR ID</th><th>Photos</th></tr></thead><tbody></tbody></table>
+  <hr/>
+  <div class="row">
+    <button id="importBtn">Import .xlsx</button>
+    <input id="importFile" type="file" accept=".xlsx" hidden/>
+    <button id="exportBtn">Export .xlsx + images (ZIP)</button>
+    <button id="wipeBtn" class="danger">Wipe local data</button>
+  </div>
+</section>
+
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script src="app.js"></script>
+<script>if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js');</script>
+</body>
+</html>
