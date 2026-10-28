@@ -141,40 +141,58 @@ nativeInput.onchange = async e=>{
   const f = e.target.files && e.target.files[0];
   if(!f) return;
   if(!f.type.startsWith('image/')){
-    status.textContent = `Received ${f.type || 'unknown file'}. Please pick a camera app that returns JPG/PNG (not PDF).`;
+    status.textContent = `Received ${f.type || 'unknown file'}. Please pick a camera app that returns JPG/PNG.`;
     return;
   }
   try{
-    // Decode QR from the FULL-resolution original first (better accuracy)
-    const bmpFull = await createImageBitmap(f, { imageOrientation:'from-image' });
-    const cFull = document.createElement('canvas');
-    cFull.width = bmpFull.width; cFull.height = bmpFull.height;
-    const cxFull = cFull.getContext('2d', { willReadFrequently:true });
-    cxFull.drawImage(bmpFull, 0, 0);
-    const dataFull = cxFull.getImageData(0, 0, cFull.width, cFull.height);
-    const code = jsQR(dataFull.data, cFull.width, cFull.height, { inversionAttempts:'attemptBoth' });
-    status.textContent = `img ${cFull.width}x${cFull.height} - QR: ${code ? code.data : 'NOT found'}`;
+    // Peek at dimensions cheaply
+    const probe = await createImageBitmap(f, { imageOrientation:'from-image' });
+    const srcW = probe.width, srcH = probe.height;
+    probe.close && probe.close();
+
+    // --- QR decode on a 1400-px copy (RAM-friendly) ---
+    const qrEdge = 1400;
+    const sQ = Math.min(1, qrEdge / Math.max(srcW, srcH));
+    const bmpQ = await createImageBitmap(f, {
+      imageOrientation:'from-image',
+      resizeWidth:  Math.round(srcW*sQ),
+      resizeHeight: Math.round(srcH*sQ),
+      resizeQuality:'high'
+    });
+    const cQ = document.createElement('canvas'); cQ.width=bmpQ.width; cQ.height=bmpQ.height;
+    const cxQ = cQ.getContext('2d',{willReadFrequently:true});
+    cxQ.drawImage(bmpQ,0,0);
+    const dataQ = cxQ.getImageData(0,0,bmpQ.width,bmpQ.height);
+    const code = jsQR(dataQ.data, bmpQ.width, bmpQ.height, { inversionAttempts:'attemptBoth' });
+    bmpQ.close && bmpQ.close();
     if(code && code.data) setQR(code.data);
 
-
-    // Now downscale for storage (max 3600px long edge, JPEG q=0.90)
-    const maxEdge = 3600, quality = 0.90;
-    const scale = Math.min(1, maxEdge / Math.max(bmpFull.width, bmpFull.height));
-    const w = Math.round(bmpFull.width*scale), h = Math.round(bmpFull.height*scale);
-    const c = document.createElement('canvas'); c.width=w; c.height=h;
-    c.getContext('2d').drawImage(bmpFull, 0, 0, w, h);
-    lastBlob = await new Promise(res => c.toBlob(res, 'image/jpeg', quality));
+    // --- Storage copy at target resolution (also RAM-friendly) ---
+    const maxEdge = 2400, quality = 0.85;
+    const sS = Math.min(1, maxEdge / Math.max(srcW, srcH));
+    const bmpS = await createImageBitmap(f, {
+      imageOrientation:'from-image',
+      resizeWidth:  Math.round(srcW*sS),
+      resizeHeight: Math.round(srcH*sS),
+      resizeQuality:'high'
+    });
+    const cS = document.createElement('canvas'); cS.width=bmpS.width; cS.height=bmpS.height;
+    cS.getContext('2d').drawImage(bmpS,0,0);
+    lastBlob = await new Promise(res => cS.toBlob(res, 'image/jpeg', quality));
     lastExt = 'jpg';
+    bmpS.close && bmpS.close();
+
     nativePreview.src = URL.createObjectURL(lastBlob);
     const origKB = Math.round(f.size/1024), newKB = Math.round(lastBlob.size/1024);
     status.textContent = code
-      ? `Photo loaded (${origKB} KB -> ${newKB} KB) and QR decoded.`
-      : `Photo loaded (${origKB} KB -> ${newKB} KB). No QR detected - enter manually.`;
+      ? `Loaded ${origKB} KB -> ${newKB} KB, QR decoded.`
+      : `Loaded ${origKB} KB -> ${newKB} KB. No QR detected - enter manually.`;
   }catch(err){
     status.textContent = 'Could not process image: '+err.message;
   }
   saveBtn.disabled = !currentQR;
 };
+
 
 
 // ============ Manual QR ============

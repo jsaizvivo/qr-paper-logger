@@ -1,4 +1,4 @@
-const CACHE='qrlogger-v5';
+const CACHE='qrlogger-v7';
 const ASSETS=['./','./index.html','./app.js','./styles.css','./manifest.json'];
 self.addEventListener('install',e=>{
   e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)));
