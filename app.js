@@ -146,13 +146,16 @@ nativeInput.onchange = async e=>{
   }
   try{
     // Decode QR from the FULL-resolution original first (better accuracy)
-    const bmpFull = await createImageBitmap(f);
+    const bmpFull = await createImageBitmap(f, { imageOrientation:'from-image' });
     const cFull = document.createElement('canvas');
     cFull.width = bmpFull.width; cFull.height = bmpFull.height;
-    const cxFull = cFull.getContext('2d'); cxFull.drawImage(bmpFull,0,0);
-    const dataFull = cxFull.getImageData(0,0,cFull.width,cFull.height);
-    const code = jsQR(dataFull.data, cFull.width, cFull.height);
-    if(code && code.data){ setQR(code.data); }
+    const cxFull = cFull.getContext('2d', { willReadFrequently:true });
+    cxFull.drawImage(bmpFull, 0, 0);
+    const dataFull = cxFull.getImageData(0, 0, cFull.width, cFull.height);
+    const code = jsQR(dataFull.data, cFull.width, cFull.height, { inversionAttempts:'attemptBoth' });
+    status.textContent = `img ${cFull.width}x${cFull.height} - QR: ${code ? code.data : 'NOT found'}`;
+    if(code && code.data) setQR(code.data);
+
 
     // Now downscale for storage (max 3600px long edge, JPEG q=0.90)
     const maxEdge = 3600, quality = 0.90;
