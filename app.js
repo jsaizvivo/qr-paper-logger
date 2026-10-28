@@ -124,61 +124,52 @@ function scanLoop(){
   }
   requestAnimationFrame(scanLoop);
 }
-
-// ============ Take photo via native camera ============
+// ============ Take photo via native camera (no preview, auto-save) ============
 takePhotoBtn.onclick = ()=>{
+  if(!currentQR){ status.textContent='Scan a QR first.'; return; }
   stopScanner();
   photoInput.click();
 };
-photoInput.onchange = async e=>{
+
+photoInput.onchange = e=>{
   const f = e.target.files && e.target.files[0];
-  if(!f) return;
+  photoInput.value = '';                      // release the input's own reference
+  if(!f){ startScanner(); return; }
   if(!f.type.startsWith('image/')){
-    status.textContent = `Got ${f.type||'unknown'}. Please use a camera app that saves JPG/PNG.`;
+    status.textContent = `Got ${f.type||'unknown'}; expected an image.`;
+    startScanner();
     return;
   }
-  lastBlob = f;
-  lastExt = (f.type==='image/png') ? 'png' : 'jpg';
-  if(photoPreview.dataset.prev) URL.revokeObjectURL(photoPreview.dataset.prev);
-  const prevUrl = URL.createObjectURL(f);
-  photoPreview.src = prevUrl;
-  photoPreview.dataset.prev = prevUrl;
+  if(!currentQR){
+    status.textContent = 'No QR active; discarding photo.';
+    startScanner();
+    return;
+  }
 
-  photoPreview.style.display = 'block';
-  status.textContent = `Photo captured (${Math.round(f.size/1024)} KB). Fill form and Save.`;
-  saveBtn.disabled = !currentQR;
-};
-document.getElementById('clearQrBtn').onclick = ()=>{
-  currentQR = null; qrText.textContent='(none)'; takePhotoBtn.disabled=true; saveBtn.disabled=true;
-};
-
-// ============ Manual QR ============
-document.getElementById('manualQrBtn').onclick = ()=>{
-  const v = prompt('Enter QR ID:', currentQR||'');
-  if(v){ setQR(v.trim()); if(lastBlob) saveBtn.disabled=false; }
-};
-function setQR(v){
-  currentQR = v;
-  qrText.textContent = v;
-  takePhotoBtn.disabled = false;
-  if(lastBlob) saveBtn.disabled = false;
-}
-
-// ============ Save: write JPG to Downloads, keep only metadata ============
-saveBtn.onclick = ()=>{
-  if(!currentQR || !lastBlob){ status.textContent='Need QR + image.'; return; }
+  // Build filename
   counters[currentQR] = (counters[currentQR]||0) + 1;
-  const filename = `${currentQR}_${counters[currentQR]}.${lastExt}`;
+  const ext = (f.type==='image/png') ? 'png' : 'jpg';
+  const filename = `${currentQR}_${counters[currentQR]}.${ext}`;
 
-  // Trigger browser download of the photo
-  const url = URL.createObjectURL(lastBlob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 1500);
+  // Immediately pipe to Downloads
+  let url;
+  try{
+    url = URL.createObjectURL(f);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename; a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }catch(err){
+    counters[currentQR]--;
+    status.textContent = 'Download failed: '+err.message;
+    startScanner();
+    return;
+  }finally{
+    setTimeout(()=>{ if(url) URL.revokeObjectURL(url); }, 500);
+  }
 
-  // Store metadata row only
+  // Save metadata row from current form values
   const chk = id => document.getElementById(id).checked;
   records.push({
     filename, qr: currentQR, operator,
@@ -194,21 +185,46 @@ saveBtn.onclick = ()=>{
     has_shadow:            chk('has_shadow'),
     has_partial_occlusion: chk('has_partial_occlusion'),
     has_motion_blur:       chk('has_motion_blur'),
-    format: lastExt,
+    format: ext,
     notes: document.getElementById('notes').value,
     timestamp: new Date().toISOString()
   });
   persist();
 
-  status.textContent = `Saved ${filename}. Total: ${records.length}.`;
+  status.textContent = `Saved ${filename}. Total: ${records.length}. Check Downloads.`;
+
+  // Reset UI; nothing retained
   lastBlob = null;
   saveBtn.disabled = true;
+  takePhotoBtn.disabled = true;
+  photoPreview.removeAttribute('src');
   photoPreview.style.display = 'none';
   if(photoPreview.dataset.prev){ URL.revokeObjectURL(photoPreview.dataset.prev); delete photoPreview.dataset.prev; }
-  takePhotoBtn.disabled = true;
-  photoInput.value = '';
+
+  // Resume scanner for next paper
   startScanner();
 };
+
+document.getElementById('clearQrBtn').onclick = ()=>{
+  currentQR = null; qrText.textContent='(none)'; takePhotoBtn.disabled=true; saveBtn.disabled=true;
+};
+
+// ============ Manual QR ============
+document.getElementById('manualQrBtn').onclick = ()=>{
+  const v = prompt('Enter QR ID:', currentQR||'');
+  if(v){ setQR(v.trim()); }
+};
+function setQR(v){
+  currentQR = v;
+  qrText.textContent = v;
+  takePhotoBtn.disabled = false;
+}
+
+// ============ Save button: now a no-op reminder ============
+saveBtn.onclick = ()=>{
+  status.textContent = 'Photos save automatically on capture. Scan next QR.';
+};
+
 
 // ============ Gallery (metadata only, no thumbnails) ============
 const grid = document.getElementById('grid');
