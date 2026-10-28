@@ -138,17 +138,42 @@ photoInput.onchange = async e=>{
   const f = e.target.files && e.target.files[0];
   if(!f) return;
   if(!f.type.startsWith('image/')){
-    status.textContent = `Got ${f.type||'unknown file'}. Please use a camera app that saves JPG/PNG.`;
+    status.textContent = `Got ${f.type||'unknown'}. Please use a camera app that saves JPG/PNG.`;
     return;
   }
-  // Store the original file as-is. No in-browser resize = no RAM crash.
-  lastBlob = f;
-  lastExt = (f.type==='image/png') ? 'png' : 'jpg';
-  photoPreview.src = URL.createObjectURL(f);
-  photoPreview.style.display = 'block';
-  status.textContent = `Photo captured (${Math.round(f.size/1024)} KB). Fill form and Save.`;
-  saveBtn.disabled = !currentQR;
+  try{
+    // 1) Peek dimensions with a tiny bitmap, then close it immediately
+    const probe = await createImageBitmap(f, { resizeWidth: 64, resizeQuality:'low' });
+    // We don't actually know original dims from a resized bitmap; decode once more small to get ratio.
+    probe.close && probe.close();
+
+    // 2) Native resize + decode in one step (RAM-light)
+    const maxEdge = 2000;   // ~180 DPI on Letter; tweak if needed
+    const bmp = await createImageBitmap(f, {
+      imageOrientation:'from-image',
+      resizeWidth: maxEdge,            // browser picks aspect-correct height
+      resizeQuality:'high'
+    });
+    const c = document.createElement('canvas');
+    c.width = bmp.width; c.height = bmp.height;
+    c.getContext('2d').drawImage(bmp, 0, 0);
+    bmp.close && bmp.close();
+
+    lastBlob = await new Promise(res => c.toBlob(res, 'image/jpeg', 0.82));
+    // Release canvas memory
+    c.width = 0; c.height = 0;
+
+    lastExt = 'jpg';
+    photoPreview.src = URL.createObjectURL(lastBlob);
+    photoPreview.style.display = 'block';
+    const origKB = Math.round(f.size/1024), newKB = Math.round(lastBlob.size/1024);
+    status.textContent = `Photo captured (${origKB} KB -> ${newKB} KB). Fill form and Save.`;
+    saveBtn.disabled = !currentQR;
+  }catch(err){
+    status.textContent = 'Image processing failed: '+err.message+'. Try again.';
+  }
 };
+
 
 document.getElementById('clearQrBtn').onclick = ()=>{
   currentQR = null; qrText.textContent = '(none)'; takePhotoBtn.disabled = true; saveBtn.disabled = true;
@@ -170,14 +195,7 @@ function setQR(v){
 
 
 // ============ Save record ============
-saveBtn.onclick = async ()=>{
-  if(navigator.storage && navigator.storage.estimate){
-    const est = await navigator.storage.estimate();
-    const pct = est.usage / est.quota;
-    if(pct > 0.85){
-      if(!confirm(`Storage is ${Math.round(pct*100)}% full. Export now recommended. Save anyway?`)) return;
-    }
-  }  
+saveBtn.onclick = async ()=>{ 
     if(!currentQR || !lastBlob){ status.textContent='Need QR + image.'; return; }
   counters[currentQR] = (counters[currentQR]||0) + 1;
   const filename = `${currentQR}_${counters[currentQR]}.${lastExt}`;
