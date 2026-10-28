@@ -31,6 +31,11 @@ let records=[], counters={}, images={};
 let currentQR=null, lastBlob=null, lastExt='jpg';
 let stream=null, track=null, torchOn=false, scanning=false;
 
+// Ask browser not to evict our data under memory pressure
+if(navigator.storage && navigator.storage.persist) navigator.storage.persist();
+
+
+
 // ============ IndexedDB ============
 let db;
 const dbReq = indexedDB.open('qrlogger',2);
@@ -117,21 +122,21 @@ function scanLoop(){
 
 snapBtn.onclick = async ()=>{
   if(!video.videoWidth){ status.textContent='Camera not ready yet.'; return; }
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-  ctx.drawImage(video,0,0);
-  lastExt = document.getElementById('format').value || 'jpg';
-  const type = lastExt==='png' ? 'image/png' : 'image/jpeg';
-  const blob = await new Promise(res => canvas.toBlob(res, type, 0.92));
+  const maxEdge = 3600;
+  const scale = Math.min(1, maxEdge / Math.max(video.videoWidth, video.videoHeight));
+  canvas.width  = Math.round(video.videoWidth  * scale);
+  canvas.height = Math.round(video.videoHeight * scale);
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  lastExt = 'jpg';
+  const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.90));
   if(!blob){ status.textContent='Capture failed. Try again.'; return; }
   lastBlob = blob;
   status.textContent = `Frame captured (${Math.round(blob.size/1024)} KB). Fill form and Save.`;
   saveBtn.disabled = !currentQR;
 };
 
+
 // ============ Native camera ============
-const nativeInput = document.getElementById('nativeInput');
-const nativePreview = document.getElementById('nativePreview');
 nativeInput.onchange = async e=>{
   const f = e.target.files && e.target.files[0];
   if(!f) return;
@@ -139,23 +144,35 @@ nativeInput.onchange = async e=>{
     status.textContent = `Received ${f.type || 'unknown file'}. Please pick a camera app that returns JPG/PNG (not PDF).`;
     return;
   }
-  lastBlob = f;
-  lastExt = (f.type==='image/png') ? 'png' : 'jpg';
-  nativePreview.src = URL.createObjectURL(f);
   try{
-    const bmp = await createImageBitmap(f);
-    const c = document.createElement('canvas');
-    c.width = bmp.width; c.height = bmp.height;
-    const cx = c.getContext('2d'); cx.drawImage(bmp,0,0);
-    const data = cx.getImageData(0,0,c.width,c.height);
-    const code = jsQR(data.data,c.width,c.height);
-    if(code && code.data){ setQR(code.data); status.textContent='Photo loaded and QR decoded.'; }
-    else{ status.textContent='Photo loaded. No QR detected - enter QR manually.'; }
+    // Decode QR from the FULL-resolution original first (better accuracy)
+    const bmpFull = await createImageBitmap(f);
+    const cFull = document.createElement('canvas');
+    cFull.width = bmpFull.width; cFull.height = bmpFull.height;
+    const cxFull = cFull.getContext('2d'); cxFull.drawImage(bmpFull,0,0);
+    const dataFull = cxFull.getImageData(0,0,cFull.width,cFull.height);
+    const code = jsQR(dataFull.data, cFull.width, cFull.height);
+    if(code && code.data){ setQR(code.data); }
+
+    // Now downscale for storage (max 3600px long edge, JPEG q=0.90)
+    const maxEdge = 3600, quality = 0.90;
+    const scale = Math.min(1, maxEdge / Math.max(bmpFull.width, bmpFull.height));
+    const w = Math.round(bmpFull.width*scale), h = Math.round(bmpFull.height*scale);
+    const c = document.createElement('canvas'); c.width=w; c.height=h;
+    c.getContext('2d').drawImage(bmpFull, 0, 0, w, h);
+    lastBlob = await new Promise(res => c.toBlob(res, 'image/jpeg', quality));
+    lastExt = 'jpg';
+    nativePreview.src = URL.createObjectURL(lastBlob);
+    const origKB = Math.round(f.size/1024), newKB = Math.round(lastBlob.size/1024);
+    status.textContent = code
+      ? `Photo loaded (${origKB} KB -> ${newKB} KB) and QR decoded.`
+      : `Photo loaded (${origKB} KB -> ${newKB} KB). No QR detected - enter manually.`;
   }catch(err){
-    status.textContent='Could not decode image: '+err.message;
+    status.textContent = 'Could not process image: '+err.message;
   }
   saveBtn.disabled = !currentQR;
 };
+
 
 // ============ Manual QR ============
 document.getElementById('manualQrBtn').onclick = ()=>{
@@ -165,8 +182,15 @@ document.getElementById('manualQrBtn').onclick = ()=>{
 function setQR(v){ currentQR = v; qrText.textContent = v; if(lastBlob) saveBtn.disabled = false; }
 
 // ============ Save record ============
-saveBtn.onclick = ()=>{
-  if(!currentQR || !lastBlob){ status.textContent='Need QR + image.'; return; }
+saveBtn.onclick = async ()=>{
+  if(navigator.storage && navigator.storage.estimate){
+    const est = await navigator.storage.estimate();
+    const pct = est.usage / est.quota;
+    if(pct > 0.85){
+      if(!confirm(`Storage is ${Math.round(pct*100)}% full. Export now recommended. Save anyway?`)) return;
+    }
+  }  
+    if(!currentQR || !lastBlob){ status.textContent='Need QR + image.'; return; }
   counters[currentQR] = (counters[currentQR]||0) + 1;
   const filename = `${currentQR}_${counters[currentQR]}.${lastExt}`;
   images[filename] = lastBlob;
