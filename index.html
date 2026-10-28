@@ -28,30 +28,23 @@
 
 <section id="tab-capture" class="tab active">
   <h2>Capture <small id="opLabel" style="font-weight:400;font-size:13px;opacity:.7"></small></h2>
+  <p style="font-size:13px;opacity:.8">Step 1: point camera at the QR. Step 2: tap "Take photo".</p>
 
-  <div class="mode-row">
-    <label><input type="radio" name="mode" value="live" checked/> Live camera (auto QR scan)</label>
-    <label><input type="radio" name="mode" value="native"/> Native camera app</label>
-  </div>
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="canvas" hidden></canvas>
 
-  <div id="liveBox">
-    <video id="video" autoplay playsinline muted></video>
-    <canvas id="canvas"></canvas>
-    <div class="row">
-      <button id="startBtn">Start camera</button>
-      <button id="snapBtn" disabled>Capture frame</button>
-      <button id="torchBtn" disabled>Torch</button>
-    </div>
-  </div>
-
-  <div id="nativeBox" hidden>
-    <p>Opens your phone's camera. Make sure your default is a <b>camera app</b> (not a scanner that returns PDFs).</p>
-    <input id="nativeInput" type="file" accept="image/*" capture="environment"/>
-    <img id="nativePreview" alt=""/>
+  <div class="row">
+    <button id="startBtn">Start QR scanner</button>
+    <button id="torchBtn" disabled>Torch</button>
   </div>
 
   <p>QR detected: <span id="qrText">(none)</span>
-     <button id="manualQrBtn" type="button">Enter manually</button></p>
+     <button id="manualQrBtn" type="button">Enter manually</button>
+     <button id="clearQrBtn" type="button">Clear</button></p>
+
+  <input id="photoInput" type="file" accept="image/*" capture="environment" hidden/>
+  <button id="takePhotoBtn" disabled style="width:100%;padding:16px;font-size:18px;margin-top:8px">Take photo</button>
+  <img id="photoPreview" alt="" style="width:100%;margin-top:8px;border-radius:8px;display:none"/>
 
   <div id="formArea">
     <label>Phone type</label>
@@ -80,9 +73,6 @@
       <label class="chk"><input type="checkbox" id="has_motion_blur"/> has_motion_blur</label>
     </fieldset>
 
-    <label>Image format</label>
-    <select id="format"><option selected>jpg</option><option>png</option></select>
-
     <label>Notes</label>
     <input id="notes" type="text"/>
 
@@ -91,6 +81,7 @@
 
   <p id="status"></p>
 </section>
+
 
 <section id="tab-gallery" class="tab">
   <h2>Gallery</h2>

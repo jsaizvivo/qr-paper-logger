@@ -57,47 +57,51 @@ async function loadState(){
 }
 function persist(){ kvPut('records',records); kvPut('counters',counters); }
 
-// ============ Mode toggle ============
-const liveBox = document.getElementById('liveBox');
-const nativeBox = document.getElementById('nativeBox');
-document.querySelectorAll('input[name=mode]').forEach(r=>{
-  r.onchange = ()=>{
-    const live = document.querySelector('input[name=mode]:checked').value==='live';
-    liveBox.hidden = !live; nativeBox.hidden = live;
-    if(!live && stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; scanning=false; }
-  };
-});
-
-// ============ Live camera ============
+// ============ Elements ============
 const video = document.getElementById('video');
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d',{willReadFrequently:true});
 const status = document.getElementById('status');
 const qrText = document.getElementById('qrText');
 const saveBtn = document.getElementById('saveBtn');
-const snapBtn = document.getElementById('snapBtn');
 const torchBtn = document.getElementById('torchBtn');
+const takePhotoBtn = document.getElementById('takePhotoBtn');
+const photoInput = document.getElementById('photoInput');
+const photoPreview = document.getElementById('photoPreview');
+const startBtn = document.getElementById('startBtn');
 
-document.getElementById('startBtn').onclick = async ()=>{
+// ============ Live QR scanner (small canvas, QR only) ============
+async function startScanner(){
+  if(scanning) return;
   try{
     stream = await navigator.mediaDevices.getUserMedia({
-      video:{ facingMode:{ ideal:'environment' },
-              width:{ ideal:1920 }, height:{ ideal:1080 } },
-      audio:false
+      video:{ facingMode:{ ideal:'environment' } }, audio:false
     });
     video.srcObject = stream;
     await video.play();
     track = stream.getVideoTracks()[0];
     const caps = track.getCapabilities ? track.getCapabilities() : {};
     torchBtn.disabled = !caps.torch;
-    snapBtn.disabled = false;
     scanning = true;
+    startBtn.textContent = 'Scanner running';
+    startBtn.disabled = true;
     requestAnimationFrame(scanLoop);
-    status.textContent = 'Camera ready.';
+    status.textContent = 'Point at QR code.';
   }catch(e){
-    status.textContent = 'Camera error: '+e.message+' (make sure the site is HTTPS and permission is allowed).';
+    status.textContent = 'Camera error: '+e.message;
   }
-};
+}
+function stopScanner(){
+  if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
+  scanning = false;
+  startBtn.textContent = 'Start QR scanner';
+  startBtn.disabled = false;
+  torchBtn.disabled = true;
+}
+startBtn.onclick = startScanner;
+
+// Auto-start on page load (defaults to live scanner mode)
+window.addEventListener('load', ()=>setTimeout(startScanner, 300));
 
 torchBtn.onclick = async ()=>{
   if(!track) return;
@@ -107,90 +111,47 @@ torchBtn.onclick = async ()=>{
 
 function scanLoop(){
   if(!scanning) return;
-  if(video.readyState === 4 && video.videoWidth){
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    ctx.drawImage(video,0,0);
+  if(video.readyState===4 && video.videoWidth){
+    // Downscale to <=640px for QR decoding (very light on memory)
+    const maxEdge = 640;
+    const s = Math.min(1, maxEdge / Math.max(video.videoWidth, video.videoHeight));
+    canvas.width  = Math.round(video.videoWidth  * s);
+    canvas.height = Math.round(video.videoHeight * s);
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     try{
       const img = ctx.getImageData(0,0,canvas.width,canvas.height);
-      const code = jsQR(img.data,img.width,img.height,{inversionAttempts:'dontInvert'});
+      const code = jsQR(img.data, img.width, img.height, { inversionAttempts:'dontInvert' });
       if(code && code.data) setQR(code.data);
-    }catch(e){ /* ignore occasional frame errors */ }
+    }catch(e){}
   }
   requestAnimationFrame(scanLoop);
 }
 
-snapBtn.onclick = async ()=>{
-  if(!video.videoWidth){ status.textContent='Camera not ready yet.'; return; }
-  const maxEdge = 3600;
-  const scale = Math.min(1, maxEdge / Math.max(video.videoWidth, video.videoHeight));
-  canvas.width  = Math.round(video.videoWidth  * scale);
-  canvas.height = Math.round(video.videoHeight * scale);
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-  lastExt = 'jpg';
-  const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.90));
-  if(!blob){ status.textContent='Capture failed. Try again.'; return; }
-  lastBlob = blob;
-  status.textContent = `Frame captured (${Math.round(blob.size/1024)} KB). Fill form and Save.`;
-  saveBtn.disabled = !currentQR;
+// ============ Take photo via native camera ============
+takePhotoBtn.onclick = ()=>{
+  // Release the live camera so the native app can use the hardware
+  stopScanner();
+  photoInput.click();
 };
 
-
-// ============ Native camera ============
-nativeInput.onchange = async e=>{
+photoInput.onchange = async e=>{
   const f = e.target.files && e.target.files[0];
   if(!f) return;
   if(!f.type.startsWith('image/')){
-    status.textContent = `Received ${f.type || 'unknown file'}. Please pick a camera app that returns JPG/PNG.`;
+    status.textContent = `Got ${f.type||'unknown file'}. Please use a camera app that saves JPG/PNG.`;
     return;
   }
-  try{
-    // Peek at dimensions cheaply
-    const probe = await createImageBitmap(f, { imageOrientation:'from-image' });
-    const srcW = probe.width, srcH = probe.height;
-    probe.close && probe.close();
-
-    // --- QR decode on a 1400-px copy (RAM-friendly) ---
-    const qrEdge = 1400;
-    const sQ = Math.min(1, qrEdge / Math.max(srcW, srcH));
-    const bmpQ = await createImageBitmap(f, {
-      imageOrientation:'from-image',
-      resizeWidth:  Math.round(srcW*sQ),
-      resizeHeight: Math.round(srcH*sQ),
-      resizeQuality:'high'
-    });
-    const cQ = document.createElement('canvas'); cQ.width=bmpQ.width; cQ.height=bmpQ.height;
-    const cxQ = cQ.getContext('2d',{willReadFrequently:true});
-    cxQ.drawImage(bmpQ,0,0);
-    const dataQ = cxQ.getImageData(0,0,bmpQ.width,bmpQ.height);
-    const code = jsQR(dataQ.data, bmpQ.width, bmpQ.height, { inversionAttempts:'attemptBoth' });
-    bmpQ.close && bmpQ.close();
-    if(code && code.data) setQR(code.data);
-
-    // --- Storage copy at target resolution (also RAM-friendly) ---
-    const maxEdge = 2400, quality = 0.85;
-    const sS = Math.min(1, maxEdge / Math.max(srcW, srcH));
-    const bmpS = await createImageBitmap(f, {
-      imageOrientation:'from-image',
-      resizeWidth:  Math.round(srcW*sS),
-      resizeHeight: Math.round(srcH*sS),
-      resizeQuality:'high'
-    });
-    const cS = document.createElement('canvas'); cS.width=bmpS.width; cS.height=bmpS.height;
-    cS.getContext('2d').drawImage(bmpS,0,0);
-    lastBlob = await new Promise(res => cS.toBlob(res, 'image/jpeg', quality));
-    lastExt = 'jpg';
-    bmpS.close && bmpS.close();
-
-    nativePreview.src = URL.createObjectURL(lastBlob);
-    const origKB = Math.round(f.size/1024), newKB = Math.round(lastBlob.size/1024);
-    status.textContent = code
-      ? `Loaded ${origKB} KB -> ${newKB} KB, QR decoded.`
-      : `Loaded ${origKB} KB -> ${newKB} KB. No QR detected - enter manually.`;
-  }catch(err){
-    status.textContent = 'Could not process image: '+err.message;
-  }
+  // Store the original file as-is. No in-browser resize = no RAM crash.
+  lastBlob = f;
+  lastExt = (f.type==='image/png') ? 'png' : 'jpg';
+  photoPreview.src = URL.createObjectURL(f);
+  photoPreview.style.display = 'block';
+  status.textContent = `Photo captured (${Math.round(f.size/1024)} KB). Fill form and Save.`;
   saveBtn.disabled = !currentQR;
+};
+
+document.getElementById('clearQrBtn').onclick = ()=>{
+  currentQR = null; qrText.textContent = '(none)'; takePhotoBtn.disabled = true; saveBtn.disabled = true;
 };
 
 
@@ -200,7 +161,13 @@ document.getElementById('manualQrBtn').onclick = ()=>{
   const v = prompt('Enter QR ID:', currentQR||'');
   if(v){ setQR(v.trim()); saveBtn.disabled = !lastBlob; }
 };
-function setQR(v){ currentQR = v; qrText.textContent = v; if(lastBlob) saveBtn.disabled = false; }
+function setQR(v){
+  currentQR = v;
+  qrText.textContent = v;
+  takePhotoBtn.disabled = false;
+  if(lastBlob) saveBtn.disabled = false;
+}
+
 
 // ============ Save record ============
 saveBtn.onclick = async ()=>{
@@ -242,7 +209,10 @@ saveBtn.onclick = async ()=>{
   status.textContent = `Saved ${filename}. Total: ${records.length}.`;
   lastBlob = null;
   saveBtn.disabled = true;
-  nativeInput.value = '';
+  photoPreview.style.display = 'none';
+  takePhotoBtn.disabled = true;
+  photoInput.value = '';
+  startScanner();   // auto-resume scanning for the next paper
 };
 
 // ============ Gallery ============
@@ -269,8 +239,17 @@ function deleteRecord(fn){
   if(!confirm('Delete '+fn+'?')) return;
   records = records.filter(r=>r.filename!==fn);
   delete images[fn]; imgDel(fn);
-  persist(); renderGallery();
+
+  // Rebuild counters from what's left so numbering stays contiguous
+  counters = {};
+  for(const r of records){
+    const m = /^(.*)_(\d+)\.(jpg|jpeg|png)$/i.exec(r.filename||'');
+    if(m) counters[m[1]] = Math.max(counters[m[1]]||0, +m[2]);
+  }
+  persist();
+  renderGallery();
 }
+
 
 // ============ Progress + badges ============
 const BADGES = [
