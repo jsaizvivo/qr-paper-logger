@@ -3,17 +3,27 @@ let operator = localStorage.getItem('operator') || '';
 const opGate = document.getElementById('opGate');
 const opLabel = document.getElementById('opLabel');
 const opLabel2 = document.getElementById('opLabel2');
-function showOperator(){ opLabel.textContent = operator ? '('+operator+')' : ''; opLabel2.textContent = operator||''; }
-if(operator){ opGate.style.display='none'; showOperator(); }
-document.getElementById('opStart').onclick = ()=>{
-  const v = document.getElementById('opName').value.trim();
-  if(!v){ document.getElementById('opHint').textContent='Name required.'; return; }
-  operator = v; localStorage.setItem('operator', operator);
-  opGate.style.display='none'; showOperator();
-};
-document.getElementById('changeOp').onclick = e=>{
-  e.preventDefault(); localStorage.removeItem('operator'); operator=''; location.reload();
-};
+function showOperator(){
+  if(opLabel)  opLabel.textContent  = operator ? '('+operator+')' : '';
+  if(opLabel2) opLabel2.textContent = operator||'';
+}
+if(operator && opGate){ opGate.style.display='none'; showOperator(); }
+if(document.getElementById('opStart')){
+  document.getElementById('opStart').onclick = ()=>{
+    const v = document.getElementById('opName').value.trim();
+    if(!v){ document.getElementById('opHint').textContent='Name required.'; return; }
+    operator = v; localStorage.setItem('operator', operator);
+    opGate.style.display='none'; showOperator();
+  };
+}
+if(document.getElementById('changeOp')){
+  document.getElementById('changeOp').onclick = e=>{
+    e.preventDefault(); localStorage.removeItem('operator'); operator=''; location.reload();
+  };
+}
+
+// Ask browser to keep our (metadata) data under memory pressure
+if(navigator.storage && navigator.storage.persist) navigator.storage.persist();
 
 // ============ Tabs ============
 document.querySelectorAll('#tabs button').forEach(b=>{
@@ -21,38 +31,29 @@ document.querySelectorAll('#tabs button').forEach(b=>{
     document.querySelectorAll('#tabs button,.tab').forEach(x=>x.classList.remove('active'));
     b.classList.add('active');
     document.getElementById('tab-'+b.dataset.tab).classList.add('active');
-    if(b.dataset.tab==='gallery') renderGallery();
     if(b.dataset.tab==='progress') renderProgress();
+    if(b.dataset.tab==='gallery')  renderGallery();
   };
 });
 
-// ============ State ============
-let records=[], counters={}, images={};
+// ============ State (metadata only; no image blobs) ============
+let records=[], counters={};
 let currentQR=null, lastBlob=null, lastExt='jpg';
 let stream=null, track=null, torchOn=false, scanning=false;
 
-// Ask browser not to evict our data under memory pressure
-if(navigator.storage && navigator.storage.persist) navigator.storage.persist();
-
-
-
-// ============ IndexedDB ============
+// ============ IndexedDB (metadata only) ============
 let db;
-const dbReq = indexedDB.open('qrlogger',2);
+const dbReq = indexedDB.open('qrlogger',3);
 dbReq.onupgradeneeded = e=>{
   const d = e.target.result;
   if(!d.objectStoreNames.contains('kv')) d.createObjectStore('kv');
-  if(!d.objectStoreNames.contains('img')) d.createObjectStore('img');
 };
 dbReq.onsuccess = e=>{ db=e.target.result; loadState(); };
 function store(n,m='readonly'){ return db.transaction(n,m).objectStore(n); }
 function kvGet(k){ return new Promise(r=>{ store('kv').get(k).onsuccess=e=>r(e.target.result); }); }
 function kvPut(k,v){ store('kv','readwrite').put(v,k); }
-function imgPut(k,v){ store('img','readwrite').put(v,k); }
-function imgGet(k){ return new Promise(r=>{ store('img').get(k).onsuccess=e=>r(e.target.result); }); }
-function imgDel(k){ store('img','readwrite').delete(k); }
 async function loadState(){
-  records = (await kvGet('records'))||[];
+  records  = (await kvGet('records'))||[];
   counters = (await kvGet('counters'))||{};
 }
 function persist(){ kvPut('records',records); kvPut('counters',counters); }
@@ -99,8 +100,6 @@ function stopScanner(){
   torchBtn.disabled = true;
 }
 startBtn.onclick = startScanner;
-
-// Auto-start on page load (defaults to live scanner mode)
 window.addEventListener('load', ()=>setTimeout(startScanner, 300));
 
 torchBtn.onclick = async ()=>{
@@ -112,7 +111,6 @@ torchBtn.onclick = async ()=>{
 function scanLoop(){
   if(!scanning) return;
   if(video.readyState===4 && video.videoWidth){
-    // Downscale to <=640px for QR decoding (very light on memory)
     const maxEdge = 640;
     const s = Math.min(1, maxEdge / Math.max(video.videoWidth, video.videoHeight));
     canvas.width  = Math.round(video.videoWidth  * s);
@@ -129,11 +127,9 @@ function scanLoop(){
 
 // ============ Take photo via native camera ============
 takePhotoBtn.onclick = ()=>{
-  // Release the live camera so the native app can use the hardware
   stopScanner();
   photoInput.click();
 };
-
 photoInput.onchange = async e=>{
   const f = e.target.files && e.target.files[0];
   if(!f) return;
@@ -141,50 +137,21 @@ photoInput.onchange = async e=>{
     status.textContent = `Got ${f.type||'unknown'}. Please use a camera app that saves JPG/PNG.`;
     return;
   }
-  try{
-    // 1) Peek dimensions with a tiny bitmap, then close it immediately
-    const probe = await createImageBitmap(f, { resizeWidth: 64, resizeQuality:'low' });
-    // We don't actually know original dims from a resized bitmap; decode once more small to get ratio.
-    probe.close && probe.close();
-
-    // 2) Native resize + decode in one step (RAM-light)
-    const maxEdge = 2000;   // ~180 DPI on Letter; tweak if needed
-    const bmp = await createImageBitmap(f, {
-      imageOrientation:'from-image',
-      resizeWidth: maxEdge,            // browser picks aspect-correct height
-      resizeQuality:'high'
-    });
-    const c = document.createElement('canvas');
-    c.width = bmp.width; c.height = bmp.height;
-    c.getContext('2d').drawImage(bmp, 0, 0);
-    bmp.close && bmp.close();
-
-    lastBlob = await new Promise(res => c.toBlob(res, 'image/jpeg', 0.82));
-    // Release canvas memory
-    c.width = 0; c.height = 0;
-
-    lastExt = 'jpg';
-    photoPreview.src = URL.createObjectURL(lastBlob);
-    photoPreview.style.display = 'block';
-    const origKB = Math.round(f.size/1024), newKB = Math.round(lastBlob.size/1024);
-    status.textContent = `Photo captured (${origKB} KB -> ${newKB} KB). Fill form and Save.`;
-    saveBtn.disabled = !currentQR;
-  }catch(err){
-    status.textContent = 'Image processing failed: '+err.message+'. Try again.';
-  }
+  lastBlob = f;
+  lastExt = (f.type==='image/png') ? 'png' : 'jpg';
+  photoPreview.src = URL.createObjectURL(f);
+  photoPreview.style.display = 'block';
+  status.textContent = `Photo captured (${Math.round(f.size/1024)} KB). Fill form and Save.`;
+  saveBtn.disabled = !currentQR;
 };
-
-
 document.getElementById('clearQrBtn').onclick = ()=>{
-  currentQR = null; qrText.textContent = '(none)'; takePhotoBtn.disabled = true; saveBtn.disabled = true;
+  currentQR = null; qrText.textContent='(none)'; takePhotoBtn.disabled=true; saveBtn.disabled=true;
 };
-
-
 
 // ============ Manual QR ============
 document.getElementById('manualQrBtn').onclick = ()=>{
   const v = prompt('Enter QR ID:', currentQR||'');
-  if(v){ setQR(v.trim()); saveBtn.disabled = !lastBlob; }
+  if(v){ setQR(v.trim()); if(lastBlob) saveBtn.disabled=false; }
 };
 function setQR(v){
   currentQR = v;
@@ -193,20 +160,24 @@ function setQR(v){
   if(lastBlob) saveBtn.disabled = false;
 }
 
-
-// ============ Save record ============
-saveBtn.onclick = async ()=>{ 
-    if(!currentQR || !lastBlob){ status.textContent='Need QR + image.'; return; }
+// ============ Save: write JPG to Downloads, keep only metadata ============
+saveBtn.onclick = ()=>{
+  if(!currentQR || !lastBlob){ status.textContent='Need QR + image.'; return; }
   counters[currentQR] = (counters[currentQR]||0) + 1;
   const filename = `${currentQR}_${counters[currentQR]}.${lastExt}`;
-  images[filename] = lastBlob;
-  imgPut(filename, lastBlob);
 
+  // Trigger browser download of the photo
+  const url = URL.createObjectURL(lastBlob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 1500);
+
+  // Store metadata row only
   const chk = id => document.getElementById(id).checked;
   records.push({
-    filename,
-    qr: currentQR,
-    operator,
+    filename, qr: currentQR, operator,
     phone: document.getElementById('phone').value,
     scanApp: document.getElementById('scanApp').value,
     rotation_severity: document.getElementById('rotation_severity').value,
@@ -224,41 +195,41 @@ saveBtn.onclick = async ()=>{
     timestamp: new Date().toISOString()
   });
   persist();
+
   status.textContent = `Saved ${filename}. Total: ${records.length}.`;
   lastBlob = null;
   saveBtn.disabled = true;
   photoPreview.style.display = 'none';
   takePhotoBtn.disabled = true;
   photoInput.value = '';
-  startScanner();   // auto-resume scanning for the next paper
+  startScanner();
 };
 
-// ============ Gallery ============
+// ============ Gallery (metadata only, no thumbnails) ============
 const grid = document.getElementById('grid');
 const filter = document.getElementById('filter');
-async function renderGallery(){
+function renderGallery(){
   const f = (filter.value||'').toLowerCase();
   grid.innerHTML = '';
   for(const r of records){
     if(f && !r.qr.toLowerCase().includes(f)) continue;
-    const blob = images[r.filename] || await imgGet(r.filename);
-    if(blob) images[r.filename] = blob;
-    const url = blob ? URL.createObjectURL(blob) : '';
     const card = document.createElement('div'); card.className='card';
-    card.innerHTML = `<img src="${url}" loading="lazy"/>
-      <div class="meta"><b>${r.filename}</b><br/>${r.phone} / blur:${r.blur_severity} / crease:${r.crease_severity}</div>
-      <button data-f="${r.filename}">Delete</button>`;
+    card.innerHTML = `
+      <div class="meta" style="padding:8px">
+        <b>${r.filename}</b><br/>
+        ${r.operator||''} / ${r.phone}<br/>
+        blur:${r.blur_severity} crease:${r.crease_severity} rot:${r.rotation_severity}
+      </div>
+      <button data-f="${r.filename}">Delete record</button>`;
     card.querySelector('button').onclick = ()=>deleteRecord(r.filename);
     grid.appendChild(card);
   }
 }
 filter.oninput = renderGallery;
 function deleteRecord(fn){
-  if(!confirm('Delete '+fn+'?')) return;
+  if(!confirm('Delete record '+fn+'? (The JPG already in Downloads will NOT be removed.)')) return;
   records = records.filter(r=>r.filename!==fn);
-  delete images[fn]; imgDel(fn);
-
-  // Rebuild counters from what's left so numbering stays contiguous
+  // Rebuild counters so next shot of this QR reuses the freed slot
   counters = {};
   for(const r of records){
     const m = /^(.*)_(\d+)\.(jpg|jpeg|png)$/i.exec(r.filename||'');
@@ -267,7 +238,6 @@ function deleteRecord(fn){
   persist();
   renderGallery();
 }
-
 
 // ============ Progress + badges ============
 const BADGES = [
@@ -306,7 +276,7 @@ function renderProgress(){
   });
 }
 
-// ============ Import / Export / Wipe ============
+// ============ Import / Export (metadata only) / Wipe ============
 document.getElementById('importBtn').onclick = ()=>document.getElementById('importFile').click();
 document.getElementById('importFile').onchange = async e=>{
   const buf = await e.target.files[0].arrayBuffer();
@@ -321,32 +291,25 @@ document.getElementById('importFile').onchange = async e=>{
   alert(`Imported ${rows.length} rows.`);
 };
 
-document.getElementById('exportBtn').onclick = async ()=>{
+document.getElementById('exportBtn').onclick = ()=>{
+  if(records.length===0){ alert('Nothing to export.'); return; }
   const ws = XLSX.utils.json_to_sheet(records);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Log');
-  const xlsxBlob = new Blob([XLSX.write(wb,{type:'array',bookType:'xlsx'})]);
-  const zip = new JSZip();
-  zip.file('log.xlsx', xlsxBlob);
-  for(const r of records){
-    const blob = images[r.filename] || await imgGet(r.filename);
-    if(blob) zip.file('images/'+r.filename, blob);
-  }
-  const out = await zip.generateAsync({type:'blob'});
+  const blob = new Blob([XLSX.write(wb,{type:'array',bookType:'xlsx'})]);
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(out);
+  a.href = URL.createObjectURL(blob);
   const stamp = new Date().toISOString().replace(/[:.]/g,'-');
   const opTag = (operator||'op').replace(/[^A-Za-z0-9_-]+/g,'_');
-  a.download = `qrlogger_${opTag}_${stamp}.zip`;
-  a.click();
+  a.download = `qrlogger_${opTag}_${stamp}.xlsx`;
+  document.body.appendChild(a); a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 1500);
 };
 
 document.getElementById('wipeBtn').onclick = ()=>{
-  if(!confirm('Erase ALL local records and images?')) return;
-  records = []; counters = {}; images = {};
+  if(!confirm('Erase ALL local metadata? (JPGs in Downloads are untouched.)')) return;
+  records = []; counters = {};
   kvPut('records', records); kvPut('counters', counters);
-  db.transaction('img','readwrite').objectStore('img').clear();
   renderProgress(); renderGallery();
-  alert('Local data wiped.');
+  alert('Local metadata wiped.');
 };
-
