@@ -139,7 +139,11 @@ photoInput.onchange = async e=>{
   }
   lastBlob = f;
   lastExt = (f.type==='image/png') ? 'png' : 'jpg';
-  photoPreview.src = URL.createObjectURL(f);
+  if(photoPreview.dataset.prev) URL.revokeObjectURL(photoPreview.dataset.prev);
+  const prevUrl = URL.createObjectURL(f);
+  photoPreview.src = prevUrl;
+  photoPreview.dataset.prev = prevUrl;
+
   photoPreview.style.display = 'block';
   status.textContent = `Photo captured (${Math.round(f.size/1024)} KB). Fill form and Save.`;
   saveBtn.disabled = !currentQR;
@@ -200,6 +204,7 @@ saveBtn.onclick = ()=>{
   lastBlob = null;
   saveBtn.disabled = true;
   photoPreview.style.display = 'none';
+  if(photoPreview.dataset.prev){ URL.revokeObjectURL(photoPreview.dataset.prev); delete photoPreview.dataset.prev; }
   takePhotoBtn.disabled = true;
   photoInput.value = '';
   startScanner();
@@ -312,4 +317,20 @@ document.getElementById('wipeBtn').onclick = ()=>{
   kvPut('records', records); kvPut('counters', counters);
   renderProgress(); renderGallery();
   alert('Local metadata wiped.');
+};
+
+document.getElementById('purgeImgsBtn').onclick = ()=>{
+  if(!confirm('Delete all image blobs stored in the browser? (The JPGs saved to Downloads are not affected.)')) return;
+  // Open the DB fresh to make sure we see the img store if it exists
+  const req = indexedDB.open('qrlogger');
+  req.onsuccess = e=>{
+    const d = e.target.result;
+    if(d.objectStoreNames.contains('img')){
+      const tx = d.transaction('img','readwrite');
+      tx.objectStore('img').clear();
+      tx.oncomplete = ()=> alert('Image blobs purged.');
+    } else {
+      alert('No image blob store found - nothing to purge.');
+    }
+  };
 };
